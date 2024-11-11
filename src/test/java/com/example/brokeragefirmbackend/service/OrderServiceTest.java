@@ -1,11 +1,14 @@
 package com.example.brokeragefirmbackend.service;
 
+import com.example.brokeragefirmbackend.enums.OrderSide;
 import com.example.brokeragefirmbackend.enums.OrderStatus;
 import com.example.brokeragefirmbackend.model.Asset;
+import com.example.brokeragefirmbackend.model.Customer;
 import com.example.brokeragefirmbackend.model.Order;
 import com.example.brokeragefirmbackend.model.OrderRequest;
 import com.example.brokeragefirmbackend.repository.OrderRepository;
 import com.example.brokeragefirmbackend.repository.AssetRepository;
+import com.example.brokeragefirmbackend.util.Constants;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;
@@ -87,5 +90,90 @@ public class OrderServiceTest {
         verify(orderRepository, times(1)).findById(orderId);
         verify(orderRepository, times(1)).save(order);
         assertEquals(OrderStatus.CANCELLED, order.getStatus()); // Verify the order status is updated to canceled
+    }
+
+    @Test
+    public void testCreateOrder_InsufficientTRYBalance() {
+        Customer customer = new Customer(1L);
+        String assetName = "ASSET";
+        OrderSide side = OrderSide.BUY;
+        BigDecimal size = BigDecimal.valueOf(10);
+        BigDecimal price = BigDecimal.valueOf(100);
+
+        when(assetRepository.findByCustomerIdAndAssetName(customer.getId(), assetName))
+                .thenReturn(Optional.of(new Asset()));
+        when(assetRepository.findByCustomerIdAndAssetName(customer.getId(), "TRY"))
+                .thenReturn(Optional.of(new Asset(customer, "TRY", BigDecimal.valueOf(500))));
+
+        Exception exception = assertThrows(IllegalArgumentException.class, () -> {
+            orderService.createOrder(customer.getId(), assetName, side, size, price);
+        });
+
+        assertEquals(Constants.INSUFFICIENT_BALANCE, exception.getMessage());
+    }
+
+    @Test
+    public void testCreateOrder_InsufficientAssetBalance() {
+        Long customerId = 1L;
+        String assetName = "ASSET";
+        OrderSide side = OrderSide.SELL;
+        BigDecimal size = BigDecimal.valueOf(10);
+        BigDecimal price = BigDecimal.valueOf(100);
+
+        Asset asset = new Asset();
+        asset.setUsableSize(BigDecimal.valueOf(5));
+        when(assetRepository.findByCustomerIdAndAssetName(customerId, assetName))
+                .thenReturn(Optional.of(asset));
+
+        Exception exception = assertThrows(IllegalArgumentException.class, () -> {
+            orderService.createOrder(customerId, assetName, side, size, price);
+        });
+
+        assertEquals(Constants.INSUFFICIENT_BALANCE, exception.getMessage());
+    }
+
+    @Test
+    public void testListOrders_InvalidDateRange() {
+        Long customerId = 1L;
+        LocalDate startDate = LocalDate.now();
+        LocalDate endDate = LocalDate.now().minusDays(1);
+
+        Exception exception = assertThrows(IllegalArgumentException.class, () -> {
+            orderService.listOrders(customerId, startDate, endDate);
+        });
+
+        assertEquals("Start date must be before end date.", exception.getMessage());
+    }
+
+    @Test
+    public void testCancelOrder_NonPendingOrder() {
+        Long orderId = 1L;
+        Order order = new Order();
+        order.setStatus(OrderStatus.FILLED);
+
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
+
+        Exception exception = assertThrows(IllegalStateException.class, () -> {
+            orderService.cancelOrder(order.getCustomerId(), orderId);
+        });
+
+        assertEquals("Only pending orders can be canceled.", exception.getMessage());
+    }
+
+    @Test
+    public void testCancelOrder_OrderDoesNotBelongToCustomer() {
+        Long customerId = 1L;
+        Long orderId = 1L;
+        Order order = new Order();
+        order.setStatus(OrderStatus.PENDING);
+        order.setCustomerId(2L);
+
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
+
+        Exception exception = assertThrows(IllegalArgumentException.class, () -> {
+            orderService.cancelOrder(customerId, orderId);
+        });
+
+        assertEquals("Order does not belong to the customer.", exception.getMessage());
     }
 }

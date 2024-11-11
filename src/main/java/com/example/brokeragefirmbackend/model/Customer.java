@@ -38,6 +38,10 @@ public class Customer {
         this.isAdmin = isAdmin;
     }
 
+    public Customer(Long id) {
+        this.id = id;
+    }
+
     public Customer() {
 
     }

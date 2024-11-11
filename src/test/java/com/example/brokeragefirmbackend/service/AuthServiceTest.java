@@ -2,6 +2,7 @@ package com.example.brokeragefirmbackend.service;
 
 import com.example.brokeragefirmbackend.model.Customer;
 import com.example.brokeragefirmbackend.repository.CustomerRepository;
+import com.example.brokeragefirmbackend.util.Constants;
 import com.example.brokeragefirmbackend.util.JwtUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -61,7 +62,7 @@ class AuthServiceTest {
             authService.authenticate(username, password);
         });
 
-        assertEquals("User not found", exception.getMessage());
+        assertEquals(Constants.CUSTOMER_NOT_FOUND, exception.getMessage());
         verify(customerRepository, times(1)).findByEmail(username);
     }
 
@@ -82,5 +83,45 @@ class AuthServiceTest {
 
         assertEquals("Invalid password", exception.getMessage());
         verify(customerRepository, times(1)).findByEmail(username);
+    }
+
+    @Test
+    void testAdminCanCallApiForOtherUser() {
+        String adminUsername = "admin@example.com";
+        String userUsername = "user@example.com";
+        String password = "password";
+        Customer admin = new Customer();
+        admin.setEmail(adminUsername);
+        admin.setPassword(password);
+        admin.setAdmin(true);
+
+        when(customerRepository.findByEmail(adminUsername)).thenReturn(Optional.of(admin));
+        when(jwtUtil.generateToken(adminUsername, true)).thenReturn("adminToken");
+
+        String token = authService.authenticate(adminUsername, password);
+
+        assertEquals("adminToken", token);
+        verify(customerRepository, times(1)).findByEmail(adminUsername);
+        verify(jwtUtil, times(1)).generateToken(adminUsername, true);
+    }
+
+    @Test
+    void testNonAdminCannotCallApiForOtherUser() {
+        String nonAdminUsername = "nonadmin@example.com";
+        String userUsername = "user@example.com";
+        String password = "password";
+        Customer nonAdmin = new Customer();
+        nonAdmin.setEmail(nonAdminUsername);
+        nonAdmin.setPassword(password);
+        nonAdmin.setAdmin(false);
+
+        when(customerRepository.findByEmail(nonAdminUsername)).thenReturn(Optional.of(nonAdmin));
+        when(jwtUtil.generateToken(nonAdminUsername, false)).thenReturn("nonAdminToken");
+
+        String token = authService.authenticate(nonAdminUsername, password);
+
+        assertEquals("nonAdminToken", token);
+        verify(customerRepository, times(1)).findByEmail(nonAdminUsername);
+        verify(jwtUtil, times(1)).generateToken(nonAdminUsername, false);
     }
 }

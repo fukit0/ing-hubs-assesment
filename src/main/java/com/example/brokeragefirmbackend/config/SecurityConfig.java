@@ -2,6 +2,7 @@ package com.example.brokeragefirmbackend.config;
 
 import com.example.brokeragefirmbackend.model.Customer;
 import com.example.brokeragefirmbackend.repository.CustomerRepository;
+import com.example.brokeragefirmbackend.util.Constants;
 import com.example.brokeragefirmbackend.util.JwtUtil;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
@@ -67,15 +68,15 @@ public class SecurityConfig {
 
         @Override
         protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
-            String authHeader = request.getHeader("Authorization");
-            if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            String authHeader = request.getHeader(Constants.AUTH_HEADER);
+            if (authHeader != null && authHeader.startsWith(Constants.BEARER_PREFIX)) {
                 String token = authHeader.substring(7);
                 Claims claims = jwtUtil.extractClaims(token);
                 String email = claims.getSubject();
-                Boolean isAdmin = claims.get("isAdmin", Boolean.class);
+                Boolean isAdmin = claims.get(Constants.IS_ADMIN, Boolean.class);
 
-                Customer customer = customerRepository.findByEmail(email).orElseThrow(() -> new UsernameNotFoundException("User not found"));
-                UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(customer, null, isAdmin ? List.of(new SimpleGrantedAuthority("ROLE_ADMIN")) : List.of());
+                Customer customer = customerRepository.findByEmail(email).orElseThrow(() -> new UsernameNotFoundException(Constants.CUSTOMER_NOT_FOUND));
+                UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(customer, null, isAdmin ? List.of(new SimpleGrantedAuthority(Constants.ROLE_ADMIN)) : List.of());
                 SecurityContextHolder.getContext().setAuthentication(authToken);
             }
 

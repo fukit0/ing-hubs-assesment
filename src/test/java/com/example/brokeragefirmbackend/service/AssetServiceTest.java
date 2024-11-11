@@ -3,9 +3,9 @@ package com.example.brokeragefirmbackend.service;
 import com.example.brokeragefirmbackend.model.Asset;
 import com.example.brokeragefirmbackend.model.Customer;
 import com.example.brokeragefirmbackend.repository.AssetRepository;
+import com.example.brokeragefirmbackend.util.Constants;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Incubating;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
@@ -87,5 +87,41 @@ class AssetServiceTest {
         assertEquals(2, result.size());
         assertEquals("TRY", result.get(0).getAssetName());
         assertEquals("USD", result.get(1).getAssetName());
+    }
+
+    @Test
+    void testWithdrawMoney_InsufficientFunds() {
+        Customer c = new Customer();
+        c.setId(1L);
+
+        BigDecimal amount = new BigDecimal("150.00");
+        String iban = "TR1234567890";
+        Asset asset = new Asset(c, "TRY", new BigDecimal("100.00"));
+        asset.setUsableSize(new BigDecimal("100.00"));
+
+        when(assetRepository.findByCustomerIdAndAssetName(c.getId(), "TRY")).thenReturn(Optional.of(asset));
+
+        Exception exception = assertThrows(IllegalArgumentException.class, () -> {
+            assetService.withdrawMoney(c.getId(), amount, iban);
+        });
+
+        assertEquals(Constants.INSUFFICIENT_BALANCE, exception.getMessage());
+    }
+
+    @Test
+    void testWithdrawMoney_NoAsset() {
+        Customer c = new Customer();
+        c.setId(1L);
+
+        BigDecimal amount = new BigDecimal("50.00");
+        String iban = "TR1234567890";
+
+        when(assetRepository.findByCustomerIdAndAssetName(c.getId(), "TRY")).thenReturn(Optional.empty());
+
+        Exception exception = assertThrows(IllegalArgumentException.class, () -> {
+            assetService.withdrawMoney(c.getId(), amount, iban);
+        });
+
+        assertEquals("Customer does not have a TRY asset", exception.getMessage());
     }
 }

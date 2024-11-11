@@ -4,9 +4,9 @@ import com.example.brokeragefirmbackend.model.Order;
 import com.example.brokeragefirmbackend.model.Asset;
 import com.example.brokeragefirmbackend.enums.OrderStatus;
 import com.example.brokeragefirmbackend.enums.OrderSide;
-import com.example.brokeragefirmbackend.model.OrderRequest;
 import com.example.brokeragefirmbackend.repository.AssetRepository;
 import com.example.brokeragefirmbackend.repository.OrderRepository;
+import com.example.brokeragefirmbackend.util.Constants;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,6 +16,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+
+import static com.example.brokeragefirmbackend.util.Constants.TRY;
 
 @Service
 public class OrderService {
@@ -37,7 +39,7 @@ public class OrderService {
         // Check if the customer has enough assets or TRY balance
         Optional<Asset> assetOptional = assetRepository.findByCustomerIdAndAssetName(customerId, assetName);
         if (assetOptional.isEmpty()) {
-            throw new IllegalArgumentException("Asset not found for the customer.");
+            throw new IllegalArgumentException(Constants.ASSET_NOT_FOUND);
         }
         Asset asset = assetOptional.get();
 
@@ -47,7 +49,7 @@ public class OrderService {
             Optional<Asset> tryAssetOptional = assetRepository.findByCustomerIdAndAssetName(customerId, "TRY");
             BigDecimal totalPrice = price.multiply(size);
             if (tryAssetOptional.isEmpty() || tryAssetOptional.get().getUsableSize().compareTo(totalPrice) < 0) {
-                throw new IllegalArgumentException("Insufficient TRY balance for buying.");
+                throw new IllegalArgumentException(Constants.INSUFFICIENT_BALANCE);
             }
             // Deduct TRY balance after successful check
             Asset tryAsset = tryAssetOptional.get();
@@ -56,7 +58,7 @@ public class OrderService {
         } else if (side == OrderSide.SELL) {
             // Check if customer has enough of the asset to sell
             if (asset.getUsableSize().compareTo(size) < 0) {
-                throw new IllegalArgumentException("Insufficient asset balance for selling.");
+                throw new IllegalArgumentException(Constants.INSUFFICIENT_BALANCE);
             }
             // Deduct asset size after successful check
             asset.setUsableSize(asset.getUsableSize().subtract(size));
@@ -73,10 +75,10 @@ public class OrderService {
      */
     public List<Order> listOrders(Long customerId, LocalDate startDate, LocalDate endDate) {
         if (startDate.isAfter(endDate)) {
-            throw new IllegalArgumentException("Start date must be before end date.");
+            throw new IllegalArgumentException(Constants.INVALID_DATE_RANGE);
         }
         if (startDate.isAfter(LocalDate.now()) || endDate.isAfter(LocalDate.now())) {
-            throw new IllegalArgumentException("Dates cannot be in the future.");
+            throw new IllegalArgumentException(Constants.INVALID_DATE_RANGE);
         }
         return orderRepository.findByCustomerIdAndCreateDateBetween(customerId, startDate, endDate);
     }
@@ -88,27 +90,27 @@ public class OrderService {
     @Transactional
     public void cancelOrder(Long customerId, Long orderId) {
         Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new IllegalArgumentException("Order not found."));
+                .orElseThrow(() -> new IllegalArgumentException(Constants.ORDER_NOT_FOUND));
 
         if (order.getStatus() != OrderStatus.PENDING) {
-            throw new IllegalStateException("Only pending orders can be canceled.");
+            throw new IllegalStateException(Constants.ORDER_STATUS_SHOULD_BE_PENDING);
         }
 
         if(!Objects.equals(order.getCustomerId(), customerId)) {
-            throw new IllegalArgumentException("Order does not belong to the customer.");
+            throw new IllegalArgumentException(Constants.ASSET_NOT_FOUND);
         }
 
         // Update asset or TRY balance based on order side
         if (order.getSide() == OrderSide.BUY) {
             // Refund TRY balance
-            Asset tryAsset = assetRepository.findByCustomerIdAndAssetName(order.getCustomerId(), "TRY")
-                    .orElseThrow(() -> new IllegalArgumentException("TRY asset not found."));
+            Asset tryAsset = assetRepository.findByCustomerIdAndAssetName(order.getCustomerId(), TRY)
+                    .orElseThrow(() -> new IllegalArgumentException(Constants.ASSET_NOT_FOUND));
             tryAsset.setUsableSize(tryAsset.getUsableSize().add(order.getPrice().multiply(order.getSize())));
             assetRepository.save(tryAsset);
         } else if (order.getSide() == OrderSide.SELL) {
             // Refund asset balance
             Asset asset = assetRepository.findByCustomerIdAndAssetName(order.getCustomerId(), order.getAssetName())
-                    .orElseThrow(() -> new IllegalArgumentException("Asset not found."));
+                    .orElseThrow(() -> new IllegalArgumentException(Constants.ASSET_NOT_FOUND));
             asset.setUsableSize(asset.getUsableSize().add(order.getSize()));
             assetRepository.save(asset);
         }
@@ -124,14 +126,26 @@ public class OrderService {
 
         // Iterate through each order and update assets accordingly
         for (Order order : pendingOrders) {
-            // Logic to update TRY asset and bought asset sizes
-            // This is a placeholder for the actual implementation
             updateAssets(order);
         }
     }
 
     private void updateAssets(Order order) {
-        // Implement the logic to update the assets based on the order details
-        // This is a placeholder for the actual implementation
+        if (order.getSide() == OrderSide.BUY) {
+            // Update the bought asset size
+            Asset boughtAsset = assetRepository.findByCustomerIdAndAssetName(order.getCustomerId(), order.getAssetName())
+                    .orElseThrow(() -> new IllegalArgumentException(Constants.ASSET_NOT_FOUND));
+            boughtAsset.setSize(boughtAsset.getSize().add(order.getSize()));
+            boughtAsset.setUsableSize(boughtAsset.getUsableSize().add(order.getSize()));
+            assetRepository.save(boughtAsset);
+        } else if (order.getSide() == OrderSide.SELL) {
+            // Update the TRY asset size
+            Asset tryAsset = assetRepository.findByCustomerIdAndAssetName(order.getCustomerId(), TRY)
+                    .orElseThrow(() -> new IllegalArgumentException(Constants.ASSET_NOT_FOUND));
+            BigDecimal totalPrice = order.getPrice().multiply(order.getSize());
+            tryAsset.setSize(tryAsset.getSize().add(totalPrice));
+            tryAsset.setUsableSize(tryAsset.getUsableSize().add(totalPrice));
+            assetRepository.save(tryAsset);
+        }
     }
 }
